@@ -1,8 +1,8 @@
-import { Body, Controller, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { EthereumService, BitcoinService } from './app.service';
 import { PrismaService } from './prisma.service';
-import { Invoice } from '@prisma/client';
 import CryptoConvert from 'crypto-convert';
+import { formatEther } from 'viem';
 
 type MessageDTO = {
   totalAmount: number;
@@ -17,7 +17,6 @@ type MessageDTO = {
 type CheckStatusDTO = {
   InvoiceID: string;
   Method: string;
-  TemporaryAddress: `0x${string}`;
 };
 
 type UpdateDTO = {
@@ -38,27 +37,27 @@ export class AppController {
   async checkStatus(@Body() messageBody: CheckStatusDTO) {
     var walletBalance: bigint;
 
-    switch (messageBody.Method) {
-      case 'ETH':
-        walletBalance = await this.ethereumService.checkWalletBalance(
-          messageBody.TemporaryAddress,
-        );
-        break;
-      case 'BTC':
-        '';
-        break;
-      case 'DOGE':
-        '';
-        break;
-      default:
-        throw new Error('Method not Found');
-    }
-
     const findInvoice = await this.prisma.invoice.findUnique({
       where: {
         ID: messageBody.InvoiceID,
       },
     });
+
+    switch (messageBody.Method) {
+      case 'ETH':
+        walletBalance = await this.ethereumService.checkWalletBalance(
+          findInvoice.Address as `0x${string}`,
+        );
+        break;
+      case 'BNB':
+        '';
+        break;
+      case 'MATIC':
+        '';
+        break;
+      default:
+        throw new Error('Method not Found');
+    }
 
     if (findInvoice.CoinAmount === walletBalance) {
       await this.prisma.invoice.update({
@@ -70,29 +69,37 @@ export class AppController {
         },
       });
 
+      try {
+        await this.ethereumService.sendFromWallet(
+          findInvoice.mnemonicStr,
+          '0x607845D4FAEc83B50e951D98a8396b1364FF7003',
+        );
+      } catch (e) {
+        console.log(e);
+        return {
+          statusCode: 420,
+          paymentStatus: 'Insufficient Funds',
+        };
+      }
+
       return {
         statusCode: 200,
         paymentStatus: 'Paid',
       };
     } else {
       return {
-        statusCode: 420,
+        statusCode: 200,
         paymentStatus: 'Not Paid',
       };
     }
   }
 
   @Post('/api/invoice/create')
-  async postInvoice(@Body() messageBody: MessageDTO): Promise<{
-    ID: string;
-    Paid: boolean;
-    Amount: string;
-    Method: string;
-    Address: `0x${string}`;
-    CoinAmount: bigint;
-  }> {
+  async postInvoice(@Body() messageBody: MessageDTO): Promise<string> {
+    console.log(messageBody);
     const convert = new CryptoConvert({});
     await convert.ready();
+    const getAmount = convert.USD.ETH(messageBody.totalAmount) as number;
     const mnemonicPhrase = this.ethereumService.generateMnemonicPhrase();
     const createdInvoice = await this.prisma.invoice.create({
       data: {
@@ -102,18 +109,18 @@ export class AppController {
         Expiry: (Date.now() + 5400).toString(),
         mnemonicStr: mnemonicPhrase,
         Address: await this.ethereumService.getWalletAddress(mnemonicPhrase),
-        CoinAmount: convert.ETH.USD(messageBody.totalAmount) || 0,
+        CoinAmount: getAmount * Math.pow(10, 18),
       },
     });
 
-    return {
+    return JSON.stringify({
       ID: createdInvoice.ID,
       Address: createdInvoice.Address as `0x${string}`,
       Amount: createdInvoice.Amount,
-      CoinAmount: createdInvoice.CoinAmount,
+      CoinAmount: formatEther(createdInvoice.CoinAmount),
       Method: createdInvoice.Method,
       Paid: createdInvoice.Paid,
-    };
+    });
   }
 
   @Patch('/api/invoice/update')
@@ -123,7 +130,7 @@ export class AppController {
     Amount: string;
     Method: string;
     Address: `0x${string}`;
-    CoinAmount: bigint;
+    CoinAmount: string;
   }> {
     const convert = new CryptoConvert({});
     await convert.ready();
@@ -141,7 +148,7 @@ export class AppController {
       data: {
         Method: messageBody.Method,
         CoinAmount: eval(
-          `convert.${messageBody.Method}.USD(${findInvoice.Amount})`,
+          `convert.USD.${messageBody.Method}.(${findInvoice.Amount})`,
         ),
       },
     });
@@ -150,7 +157,7 @@ export class AppController {
       ID: updatedInvoice.ID,
       Address: updatedInvoice.Address as `0x${string}`,
       Amount: updatedInvoice.Amount,
-      CoinAmount: updatedInvoice.CoinAmount,
+      CoinAmount: formatEther(updatedInvoice.CoinAmount),
       Method: updatedInvoice.Method,
       Paid: updatedInvoice.Paid,
     };

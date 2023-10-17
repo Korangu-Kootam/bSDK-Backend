@@ -10,7 +10,7 @@ const publicClient = createPublicClient({
 
 @Injectable()
 export class EthereumService {
-  async sendFromWallet(mnemonic: string, toAddress: string) {
+  async sendFromWallet(mnemonic: string, toAddress: `0x${string}`) {
     const account = mnemonicToAccount(mnemonic);
     const client = createWalletClient({
       account,
@@ -22,17 +22,22 @@ export class EthereumService {
       address: account.address,
     });
 
-    const gasEst = await publicClient.estimateGas({
+    const { gasPrice } = await publicClient.estimateFeesPerGas({
+      type: 'legacy',
+      chain: sepolia,
+    });
+
+    const gasEstimate = await publicClient.estimateGas({
       account,
       to: toAddress,
-      value: value,
     });
+
     await client.sendTransaction({
       account: account,
       to: toAddress,
-      value: value - gasEst,
-      gas: gasEst,
+      gasPrice: gasPrice,
       chain: sepolia,
+      value: value - gasPrice * gasEstimate * (1.2 as unknown as bigint),
     });
   }
 
