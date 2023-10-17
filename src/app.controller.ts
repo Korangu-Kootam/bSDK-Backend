@@ -83,25 +83,48 @@ export class AppController {
   }
 
   @Post('/api/invoice/create')
-  async postInvoice(@Body() messageBody: MessageDTO): Promise<Invoice> {
+  async postInvoice(@Body() messageBody: MessageDTO): Promise<{
+    ID: string;
+    Paid: boolean;
+    Amount: string;
+    Method: string;
+    Address: `0x${string}`;
+    CoinAmount: bigint;
+  }> {
     const convert = new CryptoConvert({});
     await convert.ready();
+    const mnemonicPhrase = this.ethereumService.generateMnemonicPhrase();
     const createdInvoice = await this.prisma.invoice.create({
       data: {
         Amount: messageBody.totalAmount.toString(),
         Paid: false,
         Method: 'ETH',
         Expiry: (Date.now() + 5400).toString(),
-        mnemonicStr: this.ethereumService.generateMnemonicPhrase(),
+        mnemonicStr: mnemonicPhrase,
+        Address: await this.ethereumService.getWalletAddress(mnemonicPhrase),
         CoinAmount: convert.ETH.USD(messageBody.totalAmount) || 0,
       },
     });
 
-    return createdInvoice;
+    return {
+      ID: createdInvoice.ID,
+      Address: createdInvoice.Address as `0x${string}`,
+      Amount: createdInvoice.Amount,
+      CoinAmount: createdInvoice.CoinAmount,
+      Method: createdInvoice.Method,
+      Paid: createdInvoice.Paid,
+    };
   }
 
   @Patch('/api/invoice/update')
-  async updateInvoice(@Body() messageBody: UpdateDTO): Promise<Invoice> {
+  async updateInvoice(@Body() messageBody: UpdateDTO): Promise<{
+    ID: string;
+    Paid: boolean;
+    Amount: string;
+    Method: string;
+    Address: `0x${string}`;
+    CoinAmount: bigint;
+  }> {
     const convert = new CryptoConvert({});
     await convert.ready();
 
@@ -123,6 +146,13 @@ export class AppController {
       },
     });
 
-    return updatedInvoice;
+    return {
+      ID: updatedInvoice.ID,
+      Address: updatedInvoice.Address as `0x${string}`,
+      Amount: updatedInvoice.Amount,
+      CoinAmount: updatedInvoice.CoinAmount,
+      Method: updatedInvoice.Method,
+      Paid: updatedInvoice.Paid,
+    };
   }
 }

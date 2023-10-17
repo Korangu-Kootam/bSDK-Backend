@@ -47,6 +47,11 @@ export class EthereumService {
     const mnemonic = generateMnemonic(english);
     return mnemonic;
   }
+
+  async getWalletAddress(mnemonic: string) {
+    const account = mnemonicToAccount(mnemonic);
+    return account.address;
+  }
 }
 
 @Injectable()
